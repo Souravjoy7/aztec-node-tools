@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Enhanced RPC Health Check Script with Industry-Standard Classifications
+# Enhanced RPC Health Check Script with NODE-Standard Classifications
 # Version 3.0 - Accurate thresholds, consensus RPC rate limiting, comprehensive testing
 
 # Color codes for better output
@@ -13,8 +13,8 @@ NC='\033[0m' # No Color
 
 # Banner
 echo -e "${BLUE}===============================================${NC}"
-echo -e "${BLUE}🏥 INDUSTRY-STANDARD RPC HEALTH CHECK SYSTEM${NC}"
-echo -e "${BLUE}Version 3.0 - Accurate Performance Standards${NC}"
+echo -e "${BLUE}🏥 NODE-STANDARD RPC HEALTH CHECK SYSTEM${NC}"
+echo -e "${BLUE}By SOUROV JOY - Accurate Performance Standards${NC}"
 echo -e "${BLUE}===============================================${NC}"
 
 # Input collection
@@ -42,7 +42,7 @@ l1_rate_limit_details=""
 cons_rate_limit_status="UNKNOWN"
 cons_rate_limit_details=""
 
-echo -e "\n${GREEN}🔍 Starting comprehensive RPC health check with industry standards...${NC}"
+echo -e "\n${GREEN}🔍 Starting comprehensive RPC health check with Node standards...${NC}"
 
 # Function to calculate average from array
 calculate_average() {
@@ -549,9 +549,9 @@ final_score=$(calculate_verdict)
 
 # Display results
 echo -e "\n" 
-echo -e "${BLUE}===============================================${NC}"
-echo -e "${BLUE}🏥 INDUSTRY-STANDARD RPC HEALTH CHECK RESULTS${NC}"
-echo -e "${BLUE}===============================================${NC}"
+echo -e "${BLUE}========================================================${NC}"
+echo -e "${BLUE}🏥 NODE-STANDARD RPC HEALTH CHECK RESULTS SCRIPT BY SOUROV JOY${NC}"
+echo -e "${BLUE}========================================================${NC}"
 
 echo -e "\n${GREEN}📊 BASIC METRICS:${NC}"
 if [[ "$chain_id" != "null" && -n "$chain_id" && "$chain_id" != "unknown" ]]; then
@@ -567,7 +567,7 @@ else
     echo "❌ Finality not supported"
 fi
 
-echo -e "\n${GREEN}⚡ PERFORMANCE METRICS (Industry Standards - 5-sample average):${NC}"
+echo -e "\n${GREEN}⚡ PERFORMANCE METRICS (Node Standards - 5-sample average):${NC}"
 printf "🚀 L1 RPC Response Time: %.4f sec (%.1fms) => %s\n" $avg_rpc_time $(echo "scale=1; $avg_rpc_time * 1000" | bc -l 2>/dev/null || echo "N/A") "$(classify_latency $avg_rpc_time)"
 printf "🏗️ Consensus RPC Time: %.4f sec (%.1fms) => %s\n" $avg_cons_time $(echo "scale=1; $avg_cons_time * 1000" | bc -l 2>/dev/null || echo "N/A") "$(classify_latency $avg_cons_time)"
 if [[ "$avg_block_time" != "0" && -n "$avg_block_time" ]]; then
@@ -589,7 +589,7 @@ echo -e "\n${GREEN}🔗 CONSENSUS METRICS:${NC}"
 echo "🧩 Consensus Client: $client_id | Peers: $peers"
 
 # Industry Standards Reference
-echo -e "\n${BLUE}📚 INDUSTRY PERFORMANCE STANDARDS:${NC}"
+echo -e "\n${BLUE}📚 NODE PERFORMANCE STANDARDS:${NC}"
 echo "🚀 Excellent: < 25ms (0.025s) - Premium tier performance"
 echo "✅ Good: 25-50ms (0.025-0.05s) - Production ready"
 echo "⚡ Acceptable: 50-200ms (0.05-0.2s) - Standard performance"
@@ -599,13 +599,13 @@ echo "❌ Very Slow: > 500ms (0.5s+) - Critical performance issues"
 # Final Verdict
 echo -e "\n" 
 echo -e "${BLUE}===============================================${NC}"
-echo -e "${BLUE}🏆 FINAL VERDICT (Industry Standards)${NC}"
+echo -e "${BLUE}🏆 FINAL VERDICT (Node Standards)${NC}"
 echo -e "${BLUE}===============================================${NC}"
 printf "${GREEN}📊 Overall Score: %d/100${NC}\n" $final_score
 
 if [[ $final_score -ge 90 ]]; then
     echo -e "${GREEN}🥇 VERDICT: BEST FOR NODE${NC}"
-    echo -e "${GREEN}   ⭐ Premium-grade performance meeting industry excellence standards${NC}"
+    echo -e "${GREEN}   ⭐ Premium-grade performance meeting node excellence standards${NC}"
 elif [[ $final_score -ge 75 ]]; then
     echo -e "${YELLOW}🥈 VERDICT: GOOD FOR NODE${NC}"
     echo -e "${YELLOW}   ✅ Production-ready performance with industry-standard metrics${NC}"
@@ -634,10 +634,10 @@ echo -e "${BLUE}===============================================${NC}"
 # Save results with industry standards
 if [[ "$1" == "--save" ]]; then
     timestamp=$(date +"%Y%m%d_%H%M%S")
-    report_file="industry_standard_rpc_report_${timestamp}.txt"
+    report_file="node_standard_rpc_report_${timestamp}.txt"
     
     {
-        echo "Industry-Standard RPC Health Check Report - $(date)"
+        echo "Node-Standard RPC Health Check Report - $(date)"
         echo "======================================================================"
         echo "L1 RPC URL: $RPC_URL"
         echo "Consensus URL: $CONS_URL"
@@ -655,5 +655,5 @@ if [[ "$1" == "--save" ]]; then
         echo "- Slow: 200-500ms | Very Slow: > 500ms"
     } > "$report_file"
     
-    echo -e "\n${GREEN}📄 Industry-standard report saved to: $report_file${NC}"
+    echo -e "\n${GREEN}📄 node-standard report saved to: $report_file${NC}"
 fi
