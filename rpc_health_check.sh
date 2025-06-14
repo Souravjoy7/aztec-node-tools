@@ -549,9 +549,9 @@ final_score=$(calculate_verdict)
 
 # Display results
 echo -e "\n" 
-echo -e "${BLUE}===============================================================${NC}"
+echo -e "${BLUE}======================================================================${NC}"
 echo -e "${BLUE}🏥 NODE-STANDARD RPC HEALTH CHECK RESULTS SCRIPT BY SOUROV JOY${NC}"
-echo -e "${BLUE}===============================================================${NC}"
+echo -e "${BLUE}======================================================================${NC}"
 
 echo -e "\n${GREEN}📊 BASIC METRICS:${NC}"
 if [[ "$chain_id" != "null" && -n "$chain_id" && "$chain_id" != "unknown" ]]; then
