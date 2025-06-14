@@ -588,14 +588,6 @@ echo -e "\n${GREEN}🔗 CONSENSUS METRICS:${NC}"
 [[ "$syncing" == "false" ]] && echo "✅ Consensus Node is Synced" || echo "🔄 Consensus Node Syncing: $syncing"
 echo "🧩 Consensus Client: $client_id | Peers: $peers"
 
-# Industry Standards Reference
-echo -e "\n${BLUE}📚 NODE PERFORMANCE STANDARDS:${NC}"
-echo "🚀 Excellent: < 25ms (0.025s) - Premium tier performance"
-echo "✅ Good: 25-50ms (0.025-0.05s) - Production ready"
-echo "⚡ Acceptable: 50-200ms (0.05-0.2s) - Standard performance"
-echo "⚠️ Slow: 200-500ms (0.2-0.5s) - Needs optimization"
-echo "❌ Very Slow: > 500ms (0.5s+) - Critical performance issues"
-
 # Final Verdict
 echo -e "\n" 
 echo -e "${BLUE}===============================================${NC}"
