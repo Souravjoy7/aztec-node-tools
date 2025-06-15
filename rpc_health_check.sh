@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Enhanced RPC Health Check Script with NODE-Standard Classifications
-# Version 3.0 - Accurate thresholds, consensus RPC rate limiting, comprehensive testing
+# Version 3.2 - Fixed consensus validation logic
+# Original by SOUROV JOY - Enhanced with proper consensus failure handling
 
 # Color codes for better output
 RED='\033[0;31m'
@@ -9,12 +9,13 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Banner
 echo -e "${BLUE}===============================================${NC}"
 echo -e "${BLUE}🏥 NODE-STANDARD RPC HEALTH CHECK SYSTEM${NC}"
-echo -e "${BLUE}By SOUROV JOY - Accurate Performance Standards${NC}"
+echo -e "${BLUE}By SOUROV JOY - Enhanced Performance Standards${NC}"
 echo -e "${BLUE}===============================================${NC}"
 
 # Input collection
@@ -41,6 +42,9 @@ l1_rate_limit_status="UNKNOWN"
 l1_rate_limit_details=""
 cons_rate_limit_status="UNKNOWN"
 cons_rate_limit_details=""
+consensus_functional=false
+beacon_finality_working=false
+beacon_head_working=false
 
 echo -e "\n${GREEN}🔍 Starting comprehensive RPC health check with Node standards...${NC}"
 
@@ -56,7 +60,11 @@ calculate_average() {
     fi
     
     for value in "${arr[@]}"; do
-        sum=$(echo "$sum + $value" | bc -l 2>/dev/null || echo "$sum + $value" | awk '{print $1 + $3}')
+        if command -v bc >/dev/null 2>&1; then
+            sum=$(echo "$sum + $value" | bc -l 2>/dev/null || echo "$sum + $value" | awk '{print $1 + $3}')
+        else
+            sum=$(awk -v s="$sum" -v v="$value" 'BEGIN {print s + v}')
+        fi
     done
     
     if command -v bc >/dev/null 2>&1; then
@@ -66,43 +74,105 @@ calculate_average() {
     fi
 }
 
-# Industry-standard latency classification (corrected thresholds)
+# Industry-standard latency classification
 classify_latency() {
     local latency=$1
     local latency_ms
     
-    # Convert to milliseconds for easier comparison
     if command -v bc >/dev/null 2>&1; then
         latency_ms=$(echo "scale=2; $latency * 1000" | bc -l)
-        
         if (( $(echo "$latency == 0" | bc -l) )); then
-            echo "❌ Invalid"
+            echo "Invalid"
         elif (( $(echo "$latency_ms < 25" | bc -l) )); then
-            echo "🚀 Excellent"
+            echo "Excellent"
         elif (( $(echo "$latency_ms < 50" | bc -l) )); then
-            echo "✅ Good"
+            echo "Good"
         elif (( $(echo "$latency_ms < 200" | bc -l) )); then
-            echo "⚡ Acceptable"
+            echo "Acceptable"
         elif (( $(echo "$latency_ms < 500" | bc -l) )); then
-            echo "⚠️ Slow"
+            echo "Slow"
         else
-            echo "❌ Very Slow"
+            echo "Very Slow"
         fi
     else
-        # Fallback without bc
         if awk -v l="$latency" 'BEGIN {exit (l == 0)}'; then
-            echo "❌ Invalid"
+            echo "Invalid"
         elif awk -v l="$latency" 'BEGIN {exit (l >= 0.025)}'; then
-            echo "🚀 Excellent"
+            echo "Excellent"
         elif awk -v l="$latency" 'BEGIN {exit (l >= 0.05)}'; then
-            echo "✅ Good"
+            echo "Good"
         elif awk -v l="$latency" 'BEGIN {exit (l >= 0.2)}'; then
-            echo "⚡ Acceptable"
+            echo "Acceptable"
         elif awk -v l="$latency" 'BEGIN {exit (l >= 0.5)}'; then
-            echo "⚠️ Slow"
+            echo "Slow"
         else
-            echo "❌ Very Slow"
+            echo "Very Slow"
         fi
+    fi
+}
+
+# Enhanced consensus functionality validation
+validate_consensus_functionality() {
+    local url=$1
+    echo -e "${PURPLE}🔍 Validating Consensus Functionality...${NC}"
+    
+    # Test beacon finality
+    beacon_finalized_response=$(curl -s "$url/eth/v1/beacon/headers/finalized" 2>/dev/null)
+    if command -v jq >/dev/null 2>&1; then
+        beacon_finalized=$(echo "$beacon_finalized_response" | jq -r '.data.header.message.slot' 2>/dev/null)
+    else
+        beacon_finalized=$(echo "$beacon_finalized_response" | grep -o '"slot":"[^"]*"' | head -1 | cut -d'"' -f4)
+    fi
+    
+    if [[ "$beacon_finalized" != "null" && -n "$beacon_finalized" && "$beacon_finalized" != "" ]]; then
+        echo -e "${GREEN}   ✅ Beacon Finality: Working (Slot: $beacon_finalized)${NC}"
+        beacon_finality_working=true
+    else
+        echo -e "${RED}   ❌ Beacon Finality: Failed${NC}"
+        beacon_finality_working=false
+    fi
+    
+    # Test beacon head
+    beacon_head_response=$(curl -s "$url/eth/v1/beacon/headers/head" 2>/dev/null)
+    if command -v jq >/dev/null 2>&1; then
+        beacon_head=$(echo "$beacon_head_response" | jq -r '.data.header.message.slot' 2>/dev/null)
+    else
+        beacon_head=$(echo "$beacon_head_response" | grep -o '"slot":"[^"]*"' | head -1 | cut -d'"' -f4)
+    fi
+    
+    if [[ "$beacon_head" != "null" && -n "$beacon_head" && "$beacon_head" != "" ]]; then
+        echo -e "${GREEN}   ✅ Beacon Head: Working (Slot: $beacon_head)${NC}"
+        beacon_head_working=true
+    else
+        echo -e "${RED}   ❌ Beacon Head: Failed${NC}"
+        beacon_head_working=false
+    fi
+    
+    # Test sync status
+    syncing_response=$(curl -s "$url/eth/v1/node/syncing" 2>/dev/null)
+    if command -v jq >/dev/null 2>&1; then
+        syncing=$(echo "$syncing_response" | jq -r '.data.is_syncing' 2>/dev/null)
+    else
+        syncing=$(echo "$syncing_response" | grep -o '"is_syncing":[^,}]*' | cut -d':' -f2 | tr -d ' "')
+    fi
+    
+    # Test node identity
+    identity_response=$(curl -s "$url/eth/v1/node/identity" 2>/dev/null)
+    if command -v jq >/dev/null 2>&1; then
+        client_id=$(echo "$identity_response" | jq -r '.data.client_name' 2>/dev/null)
+        peers=$(echo "$identity_response" | jq -r '.data.peer_count' 2>/dev/null)
+    else
+        client_id="unknown"
+        peers="0"
+    fi
+    
+    # Determine overall consensus functionality
+    if [[ "$beacon_finality_working" == true && "$beacon_head_working" == true ]]; then
+        consensus_functional=true
+        echo -e "${GREEN}   ✅ Consensus Overall: Functional${NC}"
+    else
+        consensus_functional=false
+        echo -e "${RED}   ❌ Consensus Overall: Failed${NC}"
     fi
 }
 
@@ -118,15 +188,13 @@ detect_l1_rate_limit() {
     echo -e "${YELLOW}🚦 Testing L1 RPC rate limiting (${consecutive_requests} requests)...${NC}"
     
     for ((i=1; i<=consecutive_requests; i++)); do
-        printf "  L1 Request %d/%d...\r" $i $consecutive_requests
+        printf " L1 Request %d/%d...\r" $i $consecutive_requests
         
-        # Use curl with detailed response capture
         response=$(curl -s -w "HTTPCODE:%{http_code}\nTIME:%{time_total}" \
-            -X POST -H "Content-Type: application/json" \
-            --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-            "$url" 2>/dev/null)
+                   -X POST -H "Content-Type: application/json" \
+                   --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+                   "$url" 2>/dev/null)
         
-        # Extract metrics
         http_code=$(echo "$response" | grep "HTTPCODE:" | cut -d: -f2)
         response_time=$(echo "$response" | grep "TIME:" | cut -d: -f2)
         json_response=$(echo "$response" | sed '/HTTPCODE:/,$d')
@@ -134,20 +202,14 @@ detect_l1_rate_limit() {
         request_times+=($response_time)
         status_codes+=($http_code)
         
-        # Check for rate limiting indicators
         if [[ "$http_code" == "429" ]] || [[ "$http_code" == "503" ]] || [[ "$http_code" == "402" ]] || [[ "$http_code" == "403" ]]; then
             limit_detected=true
-            echo -e "\n${RED}⚠️ L1 Rate limit detected via HTTP $http_code on request $i${NC}"
         fi
         
-        # JSON-RPC error detection
         if command -v jq >/dev/null 2>&1 && echo "$json_response" | jq -e '.error.code' >/dev/null 2>&1; then
             error_code=$(echo "$json_response" | jq -r '.error.code')
-            error_message=$(echo "$json_response" | jq -r '.error.message')
-            
             if [[ "$error_code" == "-32029" ]] || [[ "$error_code" == "-33000" ]] || [[ "$error_code" == "-33200" ]] || [[ "$error_code" == "-32005" ]]; then
                 limit_detected=true
-                echo -e "\n${RED}⚠️ L1 Rate limit detected via JSON-RPC error $error_code: $error_message${NC}"
                 json_errors+=("$error_code")
             fi
         fi
@@ -155,12 +217,10 @@ detect_l1_rate_limit() {
         sleep 0.1
     done
     
-    echo # New line
+    echo
     
-    # Statistical analysis
     local avg_time=$(calculate_average "${request_times[@]}")
     local failed_requests=0
-    
     for code in "${status_codes[@]}"; do
         if [[ "$code" != "200" ]]; then
             ((failed_requests++))
@@ -176,21 +236,16 @@ detect_l1_rate_limit() {
         fi
     fi
     
-    # Final assessment
     if [ "$limit_detected" = true ]; then
-        echo -e "${RED}🔴 L1 Rate Limiting: DETECTED${NC}"
         l1_rate_limit_status="DETECTED"
         l1_rate_limit_details="HTTP codes: ${status_codes[*]}, JSON errors: ${json_errors[*]}"
     elif command -v bc >/dev/null 2>&1 && (( $(echo "$failure_rate > 20" | bc -l) )); then
-        echo -e "${YELLOW}🟡 L1 Rate Limiting: LIKELY (${failure_rate}% failure rate)${NC}"
         l1_rate_limit_status="LIKELY"
         l1_rate_limit_details="High failure rate: ${failure_rate}%"
     elif command -v bc >/dev/null 2>&1 && (( $(echo "$avg_time > 3.0" | bc -l) )); then
-        echo -e "${YELLOW}🟡 L1 Rate Limiting: POSSIBLE (Avg response: ${avg_time}s)${NC}"
         l1_rate_limit_status="POSSIBLE"
         l1_rate_limit_details="Slow average response time"
     else
-        echo -e "${GREEN}🟢 L1 Rate Limiting: NONE DETECTED${NC}"
         l1_rate_limit_status="NONE"
         l1_rate_limit_details="All tests passed"
     fi
@@ -205,11 +260,9 @@ detect_consensus_rate_limit() {
     local consecutive_requests=10
     local request_times=()
     local status_codes=()
-    local json_errors=()
     
     echo -e "${PURPLE}🚦 Testing Consensus RPC rate limiting (${consecutive_requests} requests)...${NC}"
     
-    # Test various consensus endpoints
     local endpoints=(
         "/eth/v1/node/health"
         "/eth/v1/beacon/headers/head"
@@ -219,51 +272,32 @@ detect_consensus_rate_limit() {
     )
     
     for ((i=1; i<=consecutive_requests; i++)); do
-        printf "  Consensus Request %d/%d...\r" $i $consecutive_requests
+        printf " Consensus Request %d/%d...\r" $i $consecutive_requests
         
-        # Rotate through different endpoints to test comprehensive rate limiting
         local endpoint_index=$((i % ${#endpoints[@]}))
         local test_endpoint="${endpoints[$endpoint_index]}"
         
         response=$(curl -s -w "HTTPCODE:%{http_code}\nTIME:%{time_total}" \
-            -H "Accept: application/json" \
-            "$url$test_endpoint" 2>/dev/null)
+                   -H "Accept: application/json" \
+                   "$url$test_endpoint" 2>/dev/null)
         
-        # Extract metrics
         http_code=$(echo "$response" | grep "HTTPCODE:" | cut -d: -f2)
         response_time=$(echo "$response" | grep "TIME:" | cut -d: -f2)
-        json_response=$(echo "$response" | sed '/HTTPCODE:/,$d')
         
         request_times+=($response_time)
         status_codes+=($http_code)
         
-        # Check for rate limiting indicators
         if [[ "$http_code" == "429" ]] || [[ "$http_code" == "503" ]] || [[ "$http_code" == "402" ]] || [[ "$http_code" == "403" ]]; then
             limit_detected=true
-            echo -e "\n${RED}⚠️ Consensus Rate limit detected via HTTP $http_code on request $i (endpoint: $test_endpoint)${NC}"
-        fi
-        
-        # Check for error responses in JSON
-        if command -v jq >/dev/null 2>&1 && echo "$json_response" | jq -e '.code' >/dev/null 2>&1; then
-            error_code=$(echo "$json_response" | jq -r '.code')
-            error_message=$(echo "$json_response" | jq -r '.message // empty')
-            
-            if [[ "$error_code" == "429" ]] || [[ "$error_code" == "503" ]]; then
-                limit_detected=true
-                echo -e "\n${RED}⚠️ Consensus Rate limit detected via JSON error $error_code: $error_message${NC}"
-                json_errors+=("$error_code")
-            fi
         fi
         
         sleep 0.1
     done
     
-    echo # New line
+    echo
     
-    # Statistical analysis
     local avg_time=$(calculate_average "${request_times[@]}")
     local failed_requests=0
-    
     for code in "${status_codes[@]}"; do
         if [[ "$code" != "200" ]]; then
             ((failed_requests++))
@@ -279,21 +313,16 @@ detect_consensus_rate_limit() {
         fi
     fi
     
-    # Final assessment
     if [ "$limit_detected" = true ]; then
-        echo -e "${RED}🔴 Consensus Rate Limiting: DETECTED${NC}"
         cons_rate_limit_status="DETECTED"
-        cons_rate_limit_details="HTTP codes: ${status_codes[*]}, JSON errors: ${json_errors[*]}"
+        cons_rate_limit_details="HTTP codes: ${status_codes[*]}"
     elif command -v bc >/dev/null 2>&1 && (( $(echo "$failure_rate > 20" | bc -l) )); then
-        echo -e "${YELLOW}🟡 Consensus Rate Limiting: LIKELY (${failure_rate}% failure rate)${NC}"
         cons_rate_limit_status="LIKELY"
         cons_rate_limit_details="High failure rate: ${failure_rate}%"
     elif command -v bc >/dev/null 2>&1 && (( $(echo "$avg_time > 3.0" | bc -l) )); then
-        echo -e "${YELLOW}🟡 Consensus Rate Limiting: POSSIBLE (Avg response: ${avg_time}s)${NC}"
         cons_rate_limit_status="POSSIBLE"
         cons_rate_limit_details="Slow average response time"
     else
-        echo -e "${GREEN}🟢 Consensus Rate Limiting: NONE DETECTED${NC}"
         cons_rate_limit_status="NONE"
         cons_rate_limit_details="All tests passed"
     fi
@@ -304,41 +333,68 @@ detect_consensus_rate_limit() {
 # Block production rate classification
 classify_block_time() {
     local block_time=$1
-    local expected_time=12.0  # Ethereum average block time
+    local expected_time=12.0
     
     if command -v bc >/dev/null 2>&1; then
         if (( $(echo "$block_time == 0" | bc -l) )); then
-            echo "❌ Invalid"
+            echo "Invalid"
         elif (( $(echo "$block_time < $expected_time * 0.8" | bc -l) )); then
-            echo "🚀 Excellent"
+            echo "Excellent"
         elif (( $(echo "$block_time <= $expected_time * 1.2" | bc -l) )); then
-            echo "✅ Good"
+            echo "Good"
         elif (( $(echo "$block_time <= $expected_time * 1.5" | bc -l) )); then
-            echo "⚠️ Slow"
+            echo "Slow"
         else
-            echo "❌ Very Slow"
+            echo "Very Slow"
         fi
     else
-        # Fallback without bc
         if awk -v bt="$block_time" 'BEGIN {exit (bt != 0)}'; then
-            echo "❌ Invalid"
+            echo "Invalid"
         elif awk -v bt="$block_time" -v et="$expected_time" 'BEGIN {exit (bt >= et * 0.8)}'; then
-            echo "🚀 Excellent"
+            echo "Excellent"
         elif awk -v bt="$block_time" -v et="$expected_time" 'BEGIN {exit (bt > et * 1.2)}'; then
-            echo "✅ Good"
+            echo "Good"
         elif awk -v bt="$block_time" -v et="$expected_time" 'BEGIN {exit (bt > et * 1.5)}'; then
-            echo "⚠️ Slow"
+            echo "Slow"
         else
-            echo "❌ Very Slow"
+            echo "Very Slow"
         fi
     fi
 }
 
-# Calculate final verdict score with corrected thresholds
+# Enhanced verdict calculation with proper consensus failure handling
 calculate_verdict() {
     local score=0
     
-    # L1 RPC Response Time (35 points) - Updated thresholds
+    # CRITICAL CHECK 1: 20-second block production validation
+    if [[ $age -gt 20 ]]; then
+        echo -e "${RED}CRITICAL: Block production time exceeded 20 seconds - Node automatically fails${NC}"
+        echo 0
+        return
+    fi
+    
+    # CRITICAL CHECK 2: Consensus functionality validation
+    if [[ "$consensus_functional" == false ]]; then
+        echo -e "${RED}CRITICAL: Consensus RPC failed - No beacon finality or head - Node automatically fails${NC}"
+        echo 0
+        return
+    fi
+    
+    # CRITICAL CHECK 3: Complete L1 RPC failure
+    if [[ "$l1_rate_limit_status" == "DETECTED" && "$avg_l1_time" == "0" ]]; then
+        echo -e "${RED}CRITICAL: L1 RPC completely failed - Node automatically fails${NC}"
+        echo 0
+        return
+    fi
+    
+    # CRITICAL CHECK 4: Complete Consensus RPC failure
+    if [[ "$cons_rate_limit_status" == "DETECTED" && "$avg_cons_time" == "0" ]]; then
+        echo -e "${RED}CRITICAL: Consensus RPC completely failed - Node automatically fails${NC}"
+        echo 0
+        return
+    fi
+    
+    # L1 RPC Response Time (35 points)
     if command -v bc >/dev/null 2>&1; then
         local latency_ms=$(echo "scale=2; $avg_rpc_time * 1000" | bc -l)
         if (( $(echo "$latency_ms < 25" | bc -l) )); then
@@ -353,7 +409,6 @@ calculate_verdict() {
             score=$((score + 5))
         fi
     else
-        # Simplified scoring without bc
         if awk -v t="$avg_rpc_time" 'BEGIN {exit (t >= 0.025)}'; then
             score=$((score + 35))
         elif awk -v t="$avg_rpc_time" 'BEGIN {exit (t >= 0.05)}'; then
@@ -376,7 +431,7 @@ calculate_verdict() {
             score=$((score + 5))
         fi
     else
-        score=$((score + 15))  # Default moderate score
+        score=$((score + 15))
     fi
     
     # Block Production Rate (20 points)
@@ -410,7 +465,13 @@ calculate_verdict() {
         "DETECTED") score=$((score + 0)) ;;
     esac
     
-    # Block freshness (5 points)
+    # Block freshness (5 points) - Only if L1 is functional AND consensus is working
+    if [[ $age -gt 30 ]]; then
+        echo -e "${RED}Severe: L1 block age $age sec is STALE. Not producing fresh blocks.${NC}"
+        score=$((score - 30))
+        [[ $score -lt 0 ]] && score=0
+    fi
+    
     if [[ $age -le 15 ]]; then
         score=$((score + 5))
     elif [[ $age -le 30 ]]; then
@@ -427,6 +488,9 @@ echo -e "${BLUE}📋 Collecting basic chain information...${NC}"
 chain_id=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$RPC_URL" | jq -r .result 2>/dev/null || echo "unknown")
 client=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' "$RPC_URL" | jq -r .result 2>/dev/null || echo "unknown")
 
+# Validate consensus functionality first
+validate_consensus_functionality "$CONS_URL"
+
 # Detect rate limiting for both L1 and Consensus
 detect_l1_rate_limit "$RPC_URL"
 echo
@@ -436,20 +500,17 @@ detect_consensus_rate_limit "$CONS_URL"
 echo -e "\n${GREEN}📊 Collecting 5 measurements for accurate assessment...${NC}"
 
 for ((i=1; i<=5; i++)); do
-    echo -e "  ${BLUE}📈 Measurement $i/5...${NC}"
+    echo -e " ${BLUE}📈 Measurement $i/5...${NC}"
     
-    # Measure L1 RPC response time
     rpc_time=$(curl -s -o /dev/null -w "%{time_total}" -X POST -H "Content-Type: application/json" \
-        --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$RPC_URL" 2>/dev/null || echo "0")
+               --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$RPC_URL" 2>/dev/null || echo "0")
     rpc_times+=($rpc_time)
     
-    # Measure Consensus RPC response time
     cons_time=$(curl -s -o /dev/null -w "%{time_total}" "$CONS_URL/eth/v1/node/health" 2>/dev/null || echo "0")
     cons_rpc_times+=($cons_time)
     
-    # Get block information for production rate calculation
     current_block=$(curl -s -X POST -H "Content-Type: application/json" \
-        --data '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["latest", false],"id":1}' "$RPC_URL" 2>/dev/null)
+                    --data '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["latest", false],"id":1}' "$RPC_URL" 2>/dev/null)
     
     if command -v jq >/dev/null 2>&1; then
         current_block_hex=$(echo "$current_block" | jq -r .result.number 2>/dev/null)
@@ -459,15 +520,15 @@ for ((i=1; i<=5; i++)); do
         current_timestamp_hex=$(echo "$current_block" | grep -o '"timestamp":"[^"]*"' | cut -d'"' -f4)
     fi
     
-    if [[ $current_block_hex != "null" && -n $current_block_hex && $current_block_hex != "" ]]; then
+    if [[ $current_block_hex != "null" && -n $current_block_hex && $current_block_hex != "" && $current_block_hex =~ ^0x[0-9a-fA-F]+$ ]]; then
         current_block_dec=$((16#${current_block_hex:2}))
         current_ts_dec=$((16#${current_timestamp_hex:2}))
         
-        # Get previous block for time calculation
         prev_block_num=$((current_block_dec - 10))
         prev_block_hex=$(printf '0x%x' $prev_block_num)
+        
         prev_block=$(curl -s -X POST -H "Content-Type: application/json" \
-            --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBlockByNumber\",\"params\":[\"$prev_block_hex\", false],\"id\":1}" "$RPC_URL" 2>/dev/null)
+                     --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBlockByNumber\",\"params\":[\"$prev_block_hex\", false],\"id\":1}" "$RPC_URL" 2>/dev/null)
         
         if command -v jq >/dev/null 2>&1; then
             prev_timestamp_hex=$(echo "$prev_block" | jq -r .result.timestamp 2>/dev/null)
@@ -475,9 +536,10 @@ for ((i=1; i<=5; i++)); do
             prev_timestamp_hex=$(echo "$prev_block" | grep -o '"timestamp":"[^"]*"' | cut -d'"' -f4)
         fi
         
-        if [[ $prev_timestamp_hex != "null" && -n $prev_timestamp_hex && $prev_timestamp_hex != "" ]]; then
+        if [[ $prev_timestamp_hex != "null" && -n $prev_timestamp_hex && $prev_timestamp_hex != "" && $prev_timestamp_hex =~ ^0x[0-9a-fA-F]+$ ]]; then
             prev_ts_dec=$((16#${prev_timestamp_hex:2}))
             time_diff=$((current_ts_dec - prev_ts_dec))
+            
             if [[ $time_diff -gt 0 ]]; then
                 if command -v bc >/dev/null 2>&1; then
                     block_production_rate=$(echo "scale=4; $time_diff / 10" | bc -l)
@@ -509,46 +571,41 @@ else
     timestamp_hex=$(echo "$latest_block" | grep -o '"timestamp":"[^"]*"' | cut -d'"' -f4)
 fi
 
-if [[ $block_hex == "null" || -z $block_hex || $block_hex == "" ]]; then
-    echo -e "${RED}❌ L1 RPC not producing blocks.${NC}"
-    exit 1
+# Safe block processing
+if [[ $block_hex == "null" || -z $block_hex || $block_hex == "" || ! $block_hex =~ ^0x[0-9a-fA-F]+$ ]]; then
+    echo -e "${RED}❌ Warning: L1 RPC is not producing blocks. Proceeding with other checks...${NC}"
+    block_dec="unknown"
+    age=999999
+else
+    block_dec=$((16#${block_hex:2}))
+    ts_dec=$((16#${timestamp_hex:2}))
+    now=$(date +%s)
+    age=$((now - ts_dec))
 fi
 
-block_dec=$((16#${block_hex:2}))
-ts_dec=$((16#${timestamp_hex:2}))
-now=$(date +%s)
-age=$((now - ts_dec))
-
-[[ $age -gt 30 ]] && block_status="⚠️ STALE" || block_status="🟢 FRESH"
+# Determine block status considering both L1 and consensus
+if [[ "$consensus_functional" == false ]]; then
+    block_status="CONSENSUS_FAILED"
+elif [[ $age -gt 30 ]]; then
+    block_status="STALE"
+else
+    block_status="FRESH"
+fi
 
 # Get finalized block
 finalized_block=$(curl -s -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["finalized", false],"id":1}' "$RPC_URL" 2>/dev/null)
+
 if command -v jq >/dev/null 2>&1; then
     finalized_block_hex=$(echo "$finalized_block" | jq -r .result.number 2>/dev/null)
 else
     finalized_block_hex=$(echo "$finalized_block" | grep -o '"number":"[^"]*"' | cut -d'"' -f4)
 fi
 
-# Get consensus metrics
-if command -v jq >/dev/null 2>&1; then
-    beacon_finalized=$(curl -s "$CONS_URL/eth/v1/beacon/headers/finalized" 2>/dev/null | jq -r '.data.header.message.slot' 2>/dev/null || echo "null")
-    beacon_head=$(curl -s "$CONS_URL/eth/v1/beacon/headers/head" 2>/dev/null | jq -r '.data.header.message.slot' 2>/dev/null || echo "null")
-    syncing=$(curl -s "$CONS_URL/eth/v1/node/syncing" 2>/dev/null | jq -r '.data.is_syncing' 2>/dev/null || echo "unknown")
-    client_id=$(curl -s "$CONS_URL/eth/v1/node/identity" 2>/dev/null | jq -r '.data.client_name' 2>/dev/null || echo "unknown")
-    peers=$(curl -s "$CONS_URL/eth/v1/node/identity" 2>/dev/null | jq -r '.data.peer_count' 2>/dev/null || echo "0")
-else
-    beacon_finalized="unavailable"
-    beacon_head="unavailable" 
-    syncing="unknown"
-    client_id="unknown"
-    peers="0"
-fi
-
-# Calculate final verdict
+# Calculate final verdict with enhanced consensus validation
 final_score=$(calculate_verdict)
 
 # Display results
-echo -e "\n" 
+echo -e "\n"
 echo -e "${BLUE}======================================================================${NC}"
 echo -e "${BLUE}🏥 NODE-STANDARD RPC HEALTH CHECK RESULTS SCRIPT BY SOUROV JOY${NC}"
 echo -e "${BLUE}======================================================================${NC}"
@@ -559,8 +616,15 @@ if [[ "$chain_id" != "null" && -n "$chain_id" && "$chain_id" != "unknown" ]]; th
 else
     echo "🌐 Chain ID: Unable to determine"
 fi
+
 echo "🔍 Client: $client"
-echo "📦 Latest Block: $block_dec | ⏱ Age: ${age}s => $block_status"
+
+if [[ "$block_dec" != "unknown" ]]; then
+    echo "📦 Latest Block: $block_dec | ⏱ Age: ${age}s => $block_status"
+else
+    echo "📦 Latest Block: | ⏱ Age: ${age}s => $block_status"
+fi
+
 if [[ "$finalized_block_hex" != "null" && -n "$finalized_block_hex" && "$finalized_block_hex" != "" ]]; then
     echo "✅ Finalized Block: $((16#${finalized_block_hex:2}))"
 else
@@ -568,8 +632,20 @@ else
 fi
 
 echo -e "\n${GREEN}⚡ PERFORMANCE METRICS (Node Standards - 5-sample average):${NC}"
-printf "🚀 L1 RPC Response Time: %.4f sec (%.1fms) => %s\n" $avg_rpc_time $(echo "scale=1; $avg_rpc_time * 1000" | bc -l 2>/dev/null || echo "N/A") "$(classify_latency $avg_rpc_time)"
-printf "🏗️ Consensus RPC Time: %.4f sec (%.1fms) => %s\n" $avg_cons_time $(echo "scale=1; $avg_cons_time * 1000" | bc -l 2>/dev/null || echo "N/A") "$(classify_latency $avg_cons_time)"
+if [[ "$consensus_functional" == false ]]; then
+    printf "🚀 L1 RPC Response Time: %.4f sec (%.1fms) => %s (CONSENSUS FAILED)\n" $avg_rpc_time $(echo "scale=1; $avg_rpc_time * 1000" | bc -l 2>/dev/null || echo "N/A") "$(classify_latency $avg_rpc_time)"
+elif [[ $age -gt 30 ]]; then
+    printf "🚀 L1 RPC Response Time: %.4f sec (%.1fms) => Stale Block Detected (age ${age}s)\n" $avg_rpc_time $(echo "scale=1; $avg_rpc_time * 1000" | bc -l 2>/dev/null || echo "N/A")
+else
+    printf "🚀 L1 RPC Response Time: %.4f sec (%.1fms) => %s\n" $avg_rpc_time $(echo "scale=1; $avg_rpc_time * 1000" | bc -l 2>/dev/null || echo "N/A") "$(classify_latency $avg_rpc_time)"
+fi
+
+if [[ "$consensus_functional" == false ]]; then
+    printf "🏗️ Consensus RPC Time: %.4f sec (%.1fms) => FAILED (No Beacon Data)\n" $avg_cons_time $(echo "scale=1; $avg_cons_time * 1000" | bc -l 2>/dev/null || echo "N/A")
+else
+    printf "🏗️ Consensus RPC Time: %.4f sec (%.1fms) => %s\n" $avg_cons_time $(echo "scale=1; $avg_cons_time * 1000" | bc -l 2>/dev/null || echo "N/A") "$(classify_latency $avg_cons_time)"
+fi
+
 if [[ "$avg_block_time" != "0" && -n "$avg_block_time" ]]; then
     printf "⛏️ Block Production Rate: %.2f sec/block => %s\n" $avg_block_time "$(classify_block_time $avg_block_time)"
 else
@@ -583,19 +659,45 @@ echo "🏗️ Consensus RPC: $cons_rate_limit_status"
 echo "   Details: $cons_rate_limit_details"
 
 echo -e "\n${GREEN}🔗 CONSENSUS METRICS:${NC}"
-[[ "$beacon_finalized" != "null" && "$beacon_finalized" != "unavailable" ]] && echo "🏁 Beacon Finalized Slot: $beacon_finalized" || echo "❌ No Beacon Finality"
-[[ "$beacon_head" != "null" && "$beacon_head" != "unavailable" ]] && echo "📈 Beacon Head Slot: $beacon_head" || echo "❌ No Beacon Head"
-[[ "$syncing" == "false" ]] && echo "✅ Consensus Node is Synced" || echo "🔄 Consensus Node Syncing: $syncing"
+if [[ "$beacon_finality_working" == true ]]; then
+    echo "🏁 Beacon Finalized Slot: $beacon_finalized"
+else
+    echo "❌ No Beacon Finality"
+fi
+
+if [[ "$beacon_head_working" == true ]]; then
+    echo "📈 Beacon Head Slot: $beacon_head"
+else
+    echo "❌ No Beacon Head"
+fi
+
+if [[ "$syncing" == "false" ]]; then
+    echo "✅ Consensus Node is Synced"
+elif [[ "$syncing" == "true" ]]; then
+    echo "🔄 Consensus Node Syncing: Yes"
+else
+    echo "🔄 Consensus Node Syncing: $syncing"
+fi
+
 echo "🧩 Consensus Client: $client_id | Peers: $peers"
 
-# Final Verdict
-echo -e "\n" 
+# Final Verdict with enhanced consensus failure detection
+echo -e "\n"
 echo -e "${BLUE}===============================================${NC}"
 echo -e "${BLUE}🏆 FINAL VERDICT (Node Standards)${NC}"
 echo -e "${BLUE}===============================================${NC}"
-printf "${GREEN}📊 Overall Score: %d/100${NC}\n" $final_score
 
-if [[ $final_score -ge 90 ]]; then
+echo "📊 Overall Score: $final_score/100"
+
+# Enhanced verdict logic with proper consensus failure handling
+if [[ $age -gt 20 ]]; then
+    echo -e "${RED}❌ VERDICT: NOT SUITABLE FOR NODE${NC}"
+    echo -e "${RED}   🚨 CRITICAL FAILURE: Block production time exceeded 20 seconds${NC}"
+elif [[ "$consensus_functional" == false ]]; then
+    echo -e "${RED}❌ VERDICT: NOT SUITABLE FOR NODE${NC}"
+    echo -e "${RED}   🚨 CRITICAL FAILURE: Consensus layer completely failed${NC}"
+    echo -e "${RED}   ⚠️  No beacon finality or head data available${NC}"
+elif [[ $final_score -ge 90 ]]; then
     echo -e "${GREEN}🥇 VERDICT: BEST FOR NODE${NC}"
     echo -e "${GREEN}   ⭐ Premium-grade performance meeting node excellence standards${NC}"
 elif [[ $final_score -ge 75 ]]; then
@@ -605,47 +707,37 @@ elif [[ $final_score -ge 60 ]]; then
     echo -e "${YELLOW}🥉 VERDICT: ACCEPTABLE FOR NODE${NC}"
     echo -e "${YELLOW}   ⚡ Meets basic requirements but has room for improvement${NC}"
 else
-    echo -e "${RED}❌ VERDICT: WORST FOR NODE${NC}"
+    echo -e "${RED}❌ VERDICT: NOT SUITABLE FOR NODE${NC}"
     echo -e "${RED}   🚨 Performance issues requiring immediate attention${NC}"
 fi
 
 echo -e "\n${BLUE}📝 DETAILED BREAKDOWN:${NC}"
-echo "   • L1 RPC Performance: $(classify_latency $avg_rpc_time)"
-echo "   • Consensus RPC Performance: $(classify_latency $avg_cons_time)"
+if [[ "$consensus_functional" == false ]]; then
+    echo "   • L1 RPC Performance: $(classify_latency $avg_rpc_time) (CONSENSUS FAILED)"
+    echo "   • Consensus RPC Performance: FAILED - No Beacon Data"
+else
+    if [[ $age -gt 30 ]]; then
+        echo "   • L1 RPC Performance: Stale Block - Not Producing"
+    else
+        echo "   • L1 RPC Performance: $(classify_latency $avg_rpc_time)"
+    fi
+    echo "   • Consensus RPC Performance: $(classify_latency $avg_cons_time)"
+fi
+
 if [[ "$avg_block_time" != "0" && -n "$avg_block_time" ]]; then
     echo "   • Block Production: $(classify_block_time $avg_block_time)"
 else
     echo "   • Block Production: Unable to assess"
 fi
+
 echo "   • L1 Rate Limiting: $l1_rate_limit_status"
 echo "   • Consensus Rate Limiting: $cons_rate_limit_status"
-echo "   • Block Freshness: $block_status"
+
+# Enhanced block freshness reporting
+if [[ "$consensus_functional" == false ]]; then
+    echo "   • Block Freshness: CONSENSUS_FAILED"
+else
+    echo "   • Block Freshness: $block_status"
+fi
 
 echo -e "${BLUE}===============================================${NC}"
-
-# Save results with industry standards
-if [[ "$1" == "--save" ]]; then
-    timestamp=$(date +"%Y%m%d_%H%M%S")
-    report_file="node_standard_rpc_report_${timestamp}.txt"
-    
-    {
-        echo "Node-Standard RPC Health Check Report - $(date)"
-        echo "======================================================================"
-        echo "L1 RPC URL: $RPC_URL"
-        echo "Consensus URL: $CONS_URL"
-        echo "Overall Score: $final_score/100"
-        echo "Verdict: $(if [[ $final_score -ge 90 ]]; then echo "BEST FOR NODE"; elif [[ $final_score -ge 75 ]]; then echo "GOOD FOR NODE"; elif [[ $final_score -ge 60 ]]; then echo "ACCEPTABLE FOR NODE"; else echo "WORST FOR NODE"; fi)"
-        echo "L1 Average RPC Time: ${avg_rpc_time}s ($(echo "scale=1; $avg_rpc_time * 1000" | bc -l 2>/dev/null || echo "N/A")ms)"
-        echo "Consensus Average RPC Time: ${avg_cons_time}s ($(echo "scale=1; $avg_cons_time * 1000" | bc -l 2>/dev/null || echo "N/A")ms)"
-        echo "Average Block Time: ${avg_block_time}s"
-        echo "L1 Rate Limiting: $l1_rate_limit_status"
-        echo "Consensus Rate Limiting: $cons_rate_limit_status"
-        echo "Block Age: ${age}s"
-        echo ""
-        echo "Industry Standards Applied:"
-        echo "- Excellent: < 25ms | Good: 25-50ms | Acceptable: 50-200ms"
-        echo "- Slow: 200-500ms | Very Slow: > 500ms"
-    } > "$report_file"
-    
-    echo -e "\n${GREEN}📄 node-standard report saved to: $report_file${NC}"
-fi
